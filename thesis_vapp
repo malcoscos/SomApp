@@ -1,0 +1,52 @@
+-----------------------(1:Model)------------------------
+class Model {
+  constructor() {
+    // Controllerへ通知するコールバック
+    this.onSendRouteToAgentCallback = null;
+  }
+
+  generateRoute(start, end) {
+    // 経路の通知用コールバック
+    if (typeof this.onSendRouteToAgentCallback === 'function') {
+      this.onSendRouteToAgentCallback(this.route);
+    }
+  }
+}
+--------------------------------------------------------
+class Controller {
+  constructor(model, agentPort) {
+    this.model = model;
+    // Modelからのコールバック登録
+    model.onSendRouteToAgentCallback = (newRoute) => this.resultHandler(newRoute);
+------------------(2:Event Listener)--------------------
+    this.wss = new WebSocket.Server({ port: agentPort }, () => {});
+    this.agentSocket = null;
+    // 接続・メッセージ受信・切断イベント
+    this.wss.on("connection", (ws) => {
+      this.agentSocket = ws;
+      ws.on("message", (msg) => {
+        this.eventHandler(msg);
+      });
+    });
+--------------------------------------------------------
+  }
+------------------(3:Event Handler)---------------------
+  eventHandler(eventType) {
+    switch (eventType) {
+      // Agentが避難所を選択
+      case "selectedShelter":
+        this.model.generateRoute();
+        break;
+      // Agentが避難完了
+      case "evacComplete":
+        break;
+      default:
+    }
+  }
+--------------------------------------------------------
+------------------(4:Result Handler)--------------------
+  resultHandler(route) {
+    this.agentSocket.send(route));
+  }
+--------------------------------------------------------
+}

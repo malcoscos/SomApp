@@ -1,0 +1,55 @@
+-----------------------(1:View)-------------------------
+<!DOCTYPE html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8">
+ <title>Non-Headless Counter Example</title>
+</head>
+<body>
+ <h1>Counter</h1>
+ <div id="counter">0</div>
+ <button id="increment">Increment</button>
+ <script src="app.js"></script>
+</body>
+</html>
+
+class View {
+  constructor() {
+    this.counterElement = document.getElementById('counter');
+    this.incrementButton = document.getElementById('increment');
+  }
+}
+--------------------------------------------------------
+-----------------------(2:Model)------------------------
+class Model {
+  constructor(controller) {
+    this.count = 0;
+    this.controller = controller;
+  }
+  increment() {
+    this.count += 1;
+    return this.count 
+  }
+}
+--------------------------------------------------------
+class Controller {
+  constructor(model, view) {
+    this.model = model;
+    this.view = view;
+------------------(3:Event Listener)--------------------
+    this.view.incrementButton.addEventListener('click', () => this.handleIncrement());
+--------------------------------------------------------
+  }
+  handleIncrement() {
+------------------(4:Event Handler)---------------------
+    const count = this.model.increment();
+--------------------------------------------------------
+------------------(5:Result Handler)--------------------
+    store.commit('Increment');
+    console.log('Increment action triggered');
+--------------------------------------------------------
+------------------(6:View Update)-----------------------
+    this.view.counterElement.textContent = count;
+--------------------------------------------------------
+  }
+}

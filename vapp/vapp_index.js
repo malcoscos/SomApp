@@ -238,17 +238,7 @@ class Controller {
     }
 
     switch (data.type) {
-      case "agentLocation":
-        // Agentの位置をModelに更新
-        this.model.updateAgentLocation(data.payload);
-
-        // 初回の移動ならタイマーを起動
-        if (!this.model.firstMove) {
-          this.model.startAutoRouteGeneration();
-          this.model.firstMove = true;
-        }
-        break;
-
+      
       case "selectedShelter":
         // 選択された避難所
         this.model.setShelterLocation(data.payload);
@@ -260,7 +250,18 @@ class Controller {
           this.model.shelterLocation
         );
         break;
+
       
+      case "agentLocation":
+        // Agentの位置をModelに更新
+        this.model.updateAgentLocation(data.payload);
+
+        // 初回の移動ならタイマーを起動
+        if (!this.model.firstMove) {
+          this.model.startAutoRouteGeneration();
+          this.model.firstMove = true;
+        }
+        break;
       case "signalStatus":
         // 通信状況を受信
         this.model.updateSignalStatus(data.payload);
