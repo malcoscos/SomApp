@@ -1,23 +1,17 @@
-/**
- * app.js
- * Node.jsでの実行を想定
- */
 const WebSocket = require('ws');
 
-/* ========================
- * Model
- * ======================== */
 class Model {
   constructor() {
-    this.map = null;             
-    this.shelters = null;        
-    this.shadowAgentLocation = null;  
-    this.shelterLocation = null;      
-    this.route = null;
-    this.evacStatus = true; 
+    this.map = null;                  // 地図情報
+    this.shelters = null;             // 避難所情報
+    this.shadowAgentLocation = null;  // Agent(実際はロボットなど)の現在地
+    this.shelterLocation = null;      // 選択された避難所
+    this.route = null;                // 経路
+    this.evacStatus = true;           // 避難継続中かどうか
+    this.shadowSignalStatus = true;
 
-    // 定期的に経路生成するインターバル(10秒)
-    this.firstMove = false
+    // 経路自動生成のためのインターバル (10秒)
+    this.firstMove = false;
     this.routeGenerationInterval = 10 * 1000;
     this.routeTimerId = null;
 
@@ -27,42 +21,40 @@ class Model {
   }
 
   /**
-   * バックエンドサーバに地図情報を問い合わせる（ダミー実装）
+   * バックエンドサーバから map と shelters をまとめて取得
    */
-  async fetchMapData(location) {
-    return {
-      area: `Map data around (${location.lat}, ${location.lng}) within 3km`
-    };
-  }
+  async requestDataFromBackend(location) {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket('ws://localhost:3000');
 
-  /**
-   * バックエンドサーバに避難所情報を問い合わせる（ダミー実装）
-   */
-  async fetchShelterData(location) {
-    // 変更後(約100～300m離れる)
-    const randomOffset = () => 0.001 + Math.random() * 0.002; // 0.001~0.003
-    const rndSign = () => (Math.random() < 0.5) ? -1 : 1;
+      ws.on('open', () => {
+        // locationInfo を送信
+        const msg = {
+          type: 'locationInfo',
+          payload: location
+        };
+        ws.send(JSON.stringify(msg));
+      });
 
-    return [
-      {
-        id: 1,
-        name: "Shelter A",
-        lat: location.lat + randomOffset() * rndSign(),
-        lng: location.lng + randomOffset() * rndSign()
-      },
-      {
-        id: 2,
-        name: "Shelter B",
-        lat: location.lat + randomOffset() * rndSign(),
-        lng: location.lng + randomOffset() * rndSign()
-      },
-      {
-        id: 3,
-        name: "Shelter C",
-        lat: location.lat + randomOffset() * rndSign(),
-        lng: location.lng + randomOffset() * rndSign()
-      }
-    ];
+      ws.on('message', (message) => {
+        try {
+          const data = JSON.parse(message);
+          if (data.type === 'combinedData') {
+            // map と shelters が両方入ったデータを受け取る
+            resolve(data.payload);
+          }
+        } catch (e) {
+          reject(e);
+        } finally {
+          // 今回は一度情報を受け取れれば十分なので、クローズする
+          ws.close();
+        }
+      });
+
+      ws.on('error', (err) => {
+        reject(err);
+      });
+    });
   }
 
   /**
@@ -71,13 +63,22 @@ class Model {
   async updateAgentLocation(location) {
     this.shadowAgentLocation = location;
 
-    // 初回なら map / shelters を取得
+    // 初回ならバックエンドサーバから map / shelters を取得
     if (!this.map && !this.shelters) {
-      this.map = await this.fetchMapData(location);
-      this.shelters = await this.fetchShelterData(location);
+      try {
+        const combinedData = await this.requestDataFromBackend(location);
+        this.map = combinedData.map;
+        this.shelters = combinedData.shelters;
+      } catch (error) {
+        console.error("[Model] Failed to fetch data from backend:", error);
+      }
     }
 
     this.checkEvacuationComplete();
+  }
+
+  updateSignalStatus(signalStatus) {
+    this.shadowSignalStatus = signalStatus;
   }
 
   /**
@@ -89,24 +90,23 @@ class Model {
 
   /**
    * 経路を生成する
-   * - 距離に応じてステップ数を変える
    */
   generateRoute(start, end) {
     if (!start || !end) return [];
 
-    // Agent位置と避難所の距離を計算
+    // 2点間の距離計算
     const distance = this.calcDistance(start, end); // メートル
 
-    // 距離に応じてステップ数を動的に決定
-    // 例: 200m ごとに1ステップ増やし、最低2ステップは確保
+    // 適当なステップ数（例：1mごとに1ステップなど）
     let steps = Math.floor(distance / 10);
     if (steps < 2) {
-      steps = 2;
+      // ステップが2未満なら、すぐに避難完了扱い
+      this.checkEvacuationComplete();
     }
 
     console.log(`[Model] Distance=${distance.toFixed(1)}m, steps=${steps}`);
 
-    // 直線を「steps」個に分割
+    // 直線を steps 個に分割した座標配列を作成
     const dLat = (end.lat - start.lat) / steps;
     const dLng = (end.lng - start.lng) / steps;
     const routeArr = [];
@@ -116,32 +116,33 @@ class Model {
         lng: start.lng + dLng * i
       });
     }
-    this.route = routeArr
+    this.route = routeArr;
 
-    // 経路の通知用コールバック関数の呼び出し
+    // 経路の通知用コールバック
     if (typeof this.onSendRouteToAgentCallback === 'function') {
       this.onSendRouteToAgentCallback(this.route);
     }
   }
 
   /**
-   * 避難完了判定(距離<=30m)
+   * 避難完了判定
+   * 今回はステップが0のタイミングで完了と見なす実装
    */
   checkEvacuationComplete() {
-    if (!this.shadowAgentLocation || !this.shelterLocation) return;
-    // ルートが存在し、かつステップ数(要素数)が0なら到着とみなす
-    if (!this.evacStatus) return; // 既に完了なら何もしない
-    if (!this.route) return;      // ルート未生成ならスキップ
+    if (!this.evacStatus || !this.route || !this.shadowAgentLocation || !this.shelterLocation) {
+      // 既に完了 or 情報不十分なら何もしない
+      return;
+    }
 
-    // ルートの要素数が0=ステップが0
+    // ルートの要素数が0 = ステップが0
     if (this.route.length === 0) {
       this.evacStatus = false;
       if (typeof this.onEvacCompleteCallback === 'function') {
         this.onEvacCompleteCallback();
       }
-      // 経路の生成を中止
+      // 経路の生成を中断
       clearInterval(this.routeTimerId);
-      console.log("[vApp] Evacation Completed")
+      console.log("[vApp] Evacation Completed");
     }
   }
 
@@ -170,13 +171,15 @@ class Model {
       clearInterval(this.routeTimerId);
     }
     this.routeTimerId = setInterval(() => {
-      this.onIntervalGenerateRoute();
+      // 通信状況が悪い場合は経路を生成しない（本来は経路サーバから情報を取得不可能になる）
+      if (this.shadowSignalStatus) {
+        this.onIntervalGenerateRoute();
+      } else {
+        console.log("[vApp] Signal Status is bad");
+      }
     }, this.routeGenerationInterval);
   }
 
-  /**
-   * 定期的に呼び出される処理
-   */
   onIntervalGenerateRoute() {
     if (!this.shadowAgentLocation || !this.shelterLocation) return;
     if (!this.evacStatus) return; // 既に完了ならスキップ
@@ -190,16 +193,16 @@ class Model {
  * Controller
  * ======================== */
 class Controller {
-  constructor(model) {
+  constructor(model, agentPort) {
     this.model = model;
 
     // Modelからのコールバック登録
     model.onSendRouteToAgentCallback = (newRoute) => this.sendRouteToAgent(newRoute);
     model.onEvacCompleteCallback = () => this.sendEvacComplete();
 
-    // WebSocketサーバを立ち上げ
-    this.wss = new WebSocket.Server({ port: 3000 }, () => {
-      console.log("[vApp] WebSocket server running on port 3000");
+    // WebSocketサーバを agentPort で立ち上げ (エージェント用)
+    this.wss = new WebSocket.Server({ port: agentPort }, () => {
+      console.log(`[vApp] WebSocket server running on port ${agentPort}`);
     });
 
     this.agentSocket = null;
@@ -233,14 +236,13 @@ class Controller {
       case "agentLocation":
         // Agentの位置をModelに更新
         await this.model.updateAgentLocation(data.payload);
-        // 初回ならsheltersを送る
+
+        // 初回なら避難所リストを送る
         if (this.model.shelters && !this.model.shelterLocation) {
           this.sendSheltersToAgent();
-          break;
         }
-        // 初回の移動ならタイマーを動作
+        // 初回の移動ならタイマーを起動
         if (!this.model.firstMove) {
-          // アプリ起動時にタイマーで定期生成開始
           this.model.startAutoRouteGeneration();
           this.model.firstMove = true;
         }
@@ -256,6 +258,11 @@ class Controller {
           this.model.shadowAgentLocation,
           this.model.shelterLocation
         );
+        break;
+      
+      case "signalStatus":
+        // 通信状況を受信
+        this.model.updateSignalStatus(data.payload);
         break;
 
       default:
@@ -298,7 +305,10 @@ class Controller {
  * メイン実行
  * ======================== */
 (function main() {
+  // コマンドライン引数から、エージェント用のポート番号を取得
+  const agentPort = process.argv[2];
+
   const model = new Model();
-  const controller = new Controller(model);
+  const controller = new Controller(model, agentPort);
   console.log("[vApp] vApp server started.");
 })();

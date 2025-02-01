@@ -1,11 +1,8 @@
-/**
- * agent.js
- * Node.jsでの実行を想定
- */
 const WebSocket = require('ws');
 
 // 接続先
-const APP_WS_URL = "ws://localhost:3000";
+const agentPort = process.argv[2];
+const vappWsUrl = `ws://localhost:${agentPort}`;
 
 class Agent {
   constructor() {
@@ -14,13 +11,15 @@ class Agent {
     this.selectedShelter = null;
     this.shadowRoute = [];
     this.moveIntervalId = null;
-    this.firstRoute = true
+    this.firstRoute = true;
+    this.stepCount = 0;
+    this.signalStatus = true;
 
     this.connectToApp();
   }
 
   connectToApp() {
-    this.socket = new WebSocket(APP_WS_URL);
+    this.socket = new WebSocket(vappWsUrl);
     this.socket.on("open", () => {
       console.log("[Agent] Connected to App.");
       // 接続直後に位置情報を生成して送信
@@ -32,6 +31,7 @@ class Agent {
       if (this.moveIntervalId) {
         clearInterval(this.moveIntervalId);
       }
+
     });
   }
 
@@ -101,28 +101,34 @@ class Agent {
 
   onRouteData(route) {
     this.shadowRoute = route;
-    console.log("[Agent] Received route");
+    this.stepCount = 0
+    console.log(`[Agent] Receive Route steps:${this.shadowRoute.length}`);
     if (this.firstRoute){
       this.followRoute();
       this.firstRoute = false;
+      this.generateSignalStatusAndSend();
     }
   }
 
   followRoute() {
-    let i = 0;
     this.moveIntervalId = setInterval(() => {
-      if (i >= this.shadowRoute.length) {
+      if (this.stepCount >= this.shadowRoute.length) {
         clearInterval(this.moveIntervalId);
         this.moveIntervalId = null;
+        this.sendAgentLocation();
         console.log("[Agent] Reached end of route.");
         return;
       }
-      // 次のポイントへ
-      this.agentLocation = {
-        lat: this.shadowRoute[i].lat,
-        lng: this.shadowRoute[i].lng
-      };
-      i++;
+
+      if (this.signalStatus) {
+        // 次のポイントへ
+        this.agentLocation = {
+          lat: this.shadowRoute[this.stepCount].lat,
+          lng: this.shadowRoute[this.stepCount].lng
+        };
+        this.stepCount++;
+      }
+
       // 現在位置をAppへ送信
       this.sendAgentLocation();
     }, 5000);
@@ -132,9 +138,31 @@ class Agent {
     console.log("[Agent] Evacuation complete. Stopping agent.");
     if (this.moveIntervalId) {
       clearInterval(this.moveIntervalId);
+      clearInterval(this.generateSignalIntervalId)
       this.moveIntervalId = null;
+      this.generateSignalIntervalId
     }
     this.socket.close();
+  }
+
+  generateSignalStatusAndSend() {
+    this.generateSignalIntervalId = setInterval(() => {
+      if (Math.random() <= 1/5) {
+        this.signalStatus = false;
+      } else {
+        this.signalStatus = true;
+      }
+      this.sendSignalStatus();
+    }, 7000)
+  }
+
+  sendSignalStatus() {
+    const msg = {
+      type: "signalStatus",
+      payload: this.signalStatus
+    };
+    this.socket.send(JSON.stringify(msg));
+    console.log("[Agent] Sent signal status");
   }
 }
 
