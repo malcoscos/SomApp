@@ -18,6 +18,7 @@ class Model {
     // Controllerへ通知するコールバック
     this.onSendRouteToAgentCallback = null;
     this.onEvacCompleteCallback = null;
+    this.onFetchedSheltersCallback = null;
   }
 
   /**
@@ -69,6 +70,9 @@ class Model {
         const combinedData = await this.requestDataFromBackend(location);
         this.map = combinedData.map;
         this.shelters = combinedData.shelters;
+        if (typeof this.onFetchedSheltersCallback === 'function') {
+          this.onFetchedSheltersCallback(); 
+        }
       } catch (error) {
         console.error("[Model] Failed to fetch data from backend:", error);
       }
@@ -199,6 +203,7 @@ class Controller {
     // Modelからのコールバック登録
     model.onSendRouteToAgentCallback = (newRoute) => this.sendRouteToAgent(newRoute);
     model.onEvacCompleteCallback = () => this.sendEvacComplete();
+    model.onFetchedSheltersCallback = () => this.sendSheltersToAgent();
 
     // WebSocketサーバを agentPort で立ち上げ (エージェント用)
     this.wss = new WebSocket.Server({ port: agentPort }, () => {
@@ -235,12 +240,8 @@ class Controller {
     switch (data.type) {
       case "agentLocation":
         // Agentの位置をModelに更新
-        await this.model.updateAgentLocation(data.payload);
+        this.model.updateAgentLocation(data.payload);
 
-        // 初回なら避難所リストを送る
-        if (this.model.shelters && !this.model.shelterLocation) {
-          this.sendSheltersToAgent();
-        }
         // 初回の移動ならタイマーを起動
         if (!this.model.firstMove) {
           this.model.startAutoRouteGeneration();
