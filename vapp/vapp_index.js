@@ -16,9 +16,7 @@ class Model {
     this.routeTimerId = null;
 
     // Controllerへ通知するコールバック
-    this.onSendRouteToAgentCallback = null;
-    this.onEvacCompleteCallback = null;
-    this.onFetchedSheltersCallback = null;
+    this.onResultHandlerCallback = null;
   }
 
   /**
@@ -70,8 +68,11 @@ class Model {
         const combinedData = await this.requestDataFromBackend(location);
         this.map = combinedData.map;
         this.shelters = combinedData.shelters;
-        if (typeof this.onFetchedSheltersCallback === 'function') {
-          this.onFetchedSheltersCallback(); 
+        const msg = {
+          type: "sendSheltersToAgent"
+        };
+        if (typeof this.onResultHandlerCallback === 'function') {
+          this.onResultHandlerCallback(JSON.stringify(msg)); 
         }
       } catch (error) {
         console.error("[Model] Failed to fetch data from backend:", error);
@@ -122,9 +123,13 @@ class Model {
     }
     this.route = routeArr;
 
+    const msg = {
+      type: "sendRouteToAgent",
+      payload: this.route
+    };
     // 経路の通知用コールバック
-    if (typeof this.onSendRouteToAgentCallback === 'function') {
-      this.onSendRouteToAgentCallback(this.route);
+    if (typeof this.onResultHandlerCallback === 'function') {
+      this.onResultHandlerCallback(JSON.stringify(msg));
     }
   }
 
@@ -141,8 +146,11 @@ class Model {
     // ルートの要素数が0 = ステップが0
     if (this.route.length === 0) {
       this.evacStatus = false;
-      if (typeof this.onEvacCompleteCallback === 'function') {
-        this.onEvacCompleteCallback();
+      const msg = {
+        type: "sendEvacComplete"
+      };
+      if (typeof this.onResultHandlerCallback === 'function') {
+        this.onResultHandlerCallback(JSON.stringify(msg));
       }
       // 経路の生成を中断
       clearInterval(this.routeTimerId);
@@ -201,10 +209,7 @@ class Controller {
     this.model = model;
 
     // Modelからのコールバック登録
-    model.onSendRouteToAgentCallback = (newRoute) => this.sendRouteToAgent(newRoute);
-    model.onEvacCompleteCallback = () => this.sendEvacComplete();
-    model.onFetchedSheltersCallback = () => this.sendSheltersToAgent();
-
+    model.onResultHandlerCallback = (result) => this.resultHandler(result);
     // WebSocketサーバを agentPort で立ち上げ (エージェント用)
     this.wss = new WebSocket.Server({ port: agentPort }, () => {
       console.log(`[vApp] WebSocket server running on port ${agentPort}`);
@@ -218,7 +223,7 @@ class Controller {
       this.agentSocket = ws;
 
       ws.on("message", (msg) => {
-        this.onMessageReceived(msg);
+        this.eventHandler(msg);
       });
 
       ws.on("close", () => {
@@ -228,12 +233,12 @@ class Controller {
     });
   }
 
-  async onMessageReceived(rawMsg) {
+  async eventHandler(event) {
     let data;
     try {
-      data = JSON.parse(rawMsg);
+      data = JSON.parse(event);
     } catch (e) {
-      console.error("[vApp] JSON parse error:", rawMsg);
+      console.error("[vApp] JSON parse error:", event);
       return;
     }
 
@@ -250,7 +255,9 @@ class Controller {
           this.model.shelterLocation
         );
         break;
+      case "evacComp":
 
+        break;
       
       case "agentLocation":
         // Agentの位置をModelに更新
@@ -270,6 +277,28 @@ class Controller {
       default:
         console.log("[vApp] Unknown message type:", data.type);
     }
+  }
+
+  resultHandler(result) {
+    let data;
+    try {
+      data = JSON.parse(result);
+    } catch (e) {
+      console.error("[vApp] JSON parse error:", result);
+      return;
+    }
+    switch (data.type) {
+      case "sendSheltersToAgent":
+        this.sendSheltersToAgent();
+        break;
+      case "sendRouteToAgent":
+        this.sendRouteToAgent(data.payload);
+        break;
+      case "sendEvacComplete":
+        this.sendEvacComplete();
+        break;
+      default:
+    } 
   }
 
   sendSheltersToAgent() {
