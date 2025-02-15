@@ -16,9 +16,4 @@ node -v
 cd somapp
 sh execute.sh
 ```
-# 実行後
-```bash
-pkill -f "node agent"
-pkill -f "node vapp"
-pkill -f "node backend-server"
-```
+
