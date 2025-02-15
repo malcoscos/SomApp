@@ -1,4 +1,7 @@
-# 環境構築(Ubuntuを想定)
+# 必要環境
+- Node.js
+
+# インストール手順(Ubuntuを想定)
 ``` bash
 # node.jsのインストール
 curl -fsSL https://deb.nodesource.com/setup_lts.x
@@ -12,4 +15,10 @@ node -v
 ``` bash
 cd somapp
 sh execute.sh
+```
+# 実行後
+```bash
+pkill -f "node agent"
+pkill -f "node vapp"
+pkill -f "node backend-server"
 ```

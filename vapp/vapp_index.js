@@ -104,8 +104,10 @@ class Model {
 
     // 適当なステップ数（例：1mごとに1ステップなど）
     let steps = Math.floor(distance / 10);
-    if (steps < 2) {
-      // ステップが2未満なら、すぐに避難完了扱い
+    if (steps === 0) {
+      // ステップが0の場合に避難完了
+      this.route = [];
+      console.log(`[Model] Distance=${distance.toFixed(1)}m, steps=${steps}`);
       this.checkEvacuationComplete();
     }
 
@@ -145,16 +147,15 @@ class Model {
 
     // ルートの要素数が0 = ステップが0
     if (this.route.length === 0) {
+      console.log("[vApp] Evacation Completed");
       this.evacStatus = false;
       const msg = {
         type: "sendEvacComplete"
       };
       if (typeof this.onResultHandlerCallback === 'function') {
         this.onResultHandlerCallback(JSON.stringify(msg));
+        process.exit(0);
       }
-      // 経路の生成を中断
-      clearInterval(this.routeTimerId);
-      console.log("[vApp] Evacation Completed");
     }
   }
 

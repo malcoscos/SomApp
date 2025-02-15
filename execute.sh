@@ -1,10 +1,5 @@
 #!/bin/bash
 
-# 使用方法:
-#   ./run_multi.sh <台数>
-# 例:
-#   ./run_multi.sh 100
-
 # 引数チェック
 if [ -z "$1" ]; then
   echo "起動台数を指定してください。"

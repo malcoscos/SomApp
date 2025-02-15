@@ -78,8 +78,8 @@ class Agent {
 
   onSheltersData(shelters) {
     if (!shelters || shelters.length === 0) {
-        console.log("[Agent] There are no shelter")
-        return
+      console.log("[Agent] There are no shelter")
+      return
     };
     const idx = Math.floor(Math.random() * shelters.length);
     const chosen = shelters[idx];
@@ -112,6 +112,10 @@ class Agent {
 
   followRoute() {
     this.moveIntervalId = setInterval(() => {
+      if (!this.signalStatus) {
+        console.log("[Agent] Signal status is bad");
+        return;
+      }
       if (this.stepCount >= this.shadowRoute.length) {
         clearInterval(this.moveIntervalId);
         this.moveIntervalId = null;
@@ -120,14 +124,11 @@ class Agent {
         return;
       }
 
-      if (this.signalStatus) {
-        // 次のポイントへ
-        this.agentLocation = {
-          lat: this.shadowRoute[this.stepCount].lat,
-          lng: this.shadowRoute[this.stepCount].lng
-        };
-        this.stepCount++;
-      }
+      this.agentLocation = {
+        lat: this.shadowRoute[this.stepCount].lat,
+        lng: this.shadowRoute[this.stepCount].lng
+      };
+      this.stepCount++;
 
       // 現在位置をAppへ送信
       this.sendAgentLocation();
@@ -135,14 +136,9 @@ class Agent {
   }
 
   onEvacComplete() {
-    console.log("[Agent] Evacuation complete. Stopping agent.");
-    if (this.moveIntervalId) {
-      clearInterval(this.moveIntervalId);
-      clearInterval(this.generateSignalIntervalId)
-      this.moveIntervalId = null;
-      this.generateSignalIntervalId
-    }
+    console.log("[Agent] Evacuation complete");
     this.socket.close();
+    process.exit(0);
   }
 
   generateSignalStatusAndSend() {
